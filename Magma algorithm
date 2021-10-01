@@ -147,9 +147,6 @@ IsDiscreteAndFree := function (G, p: Limit := 10^3)
    if not flag then error "Failed"; end if;
    "Number of tries is ", nmr;
 
-   // the following part should eventually be able to replaced by
-   // "return true, _, _"
-
    if CheckTrips(g) and CheckPairs(g) then
       return true, _, _;
    else
