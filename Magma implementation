@@ -137,7 +137,7 @@ IsDiscreteAndFree := function (G, p: Limit := 10^3)
    until flag or nmr gt Limit;
 
    if not flag then error "Failed"; end if;
-   "Number of tries is ", nmr;
+   "Number of steps is ", nmr;
 
    if PPL(g) then
       return true, _, _;
