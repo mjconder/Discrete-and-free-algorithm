@@ -1,118 +1,124 @@
-// input n-generator subgroup of SL(2, Q) and a prime p
-// output: 
+// The following file contains code to run the function IsDiscreteAndFree.
+// input is: n-generator subgroup of SL(2, Q) and a prime p
+// output is:
 //   true, _                      if G is both discrete and free in SL(2, Q_p)
-//   false, witness               if not both 
+//   false, witness               if not both
 //   failed, number of steps	    if iterations go above certain limit
 //   inconclusive, current gens   if further investigation needed
 
+// we first define some preliminary functions
+// define the translation length of matrix in SL(2, Q_p) on Bruhat-Tits tree
+TL := function (m, p)
+   return -2*Min (0, Valuation (pAdicField (p)! Trace (m)));
+end function;
+
+// this is the quantity that reduces at each step of the algorithm:
+// the sum of translation lengths of each generator g_i
+// and all pairs of products g_i*g_j and g_i^-1*g_j
+
+Sum := function(g, p)
+   sum := 0;
+   for i in [1..#g] do
+      sum +:= TL (g[i], p);
+      for j in [i+1..#g] do
+         a := TL (g[i]*g[j], p); b := TL (g[i]^-1*g[j], p);
+         sum +:= a + b;
+      end for;
+   end for;
+   return sum;
+end function;
+
+
+// the following function checks whether or not an n-tuple g
+// satisfies the Ping Pong Lemma. If it does, then it returns true
+// and otherwise returns false and the index k of the element g_k which
+// causes it to fail (i.e. translation length not large enough)
+PPL := function(g, p)
+// we first check that every pair satisfies Ping Pong
+   for i in [1..#g] do
+      for j in Exclude([1..#g],i) do
+         if Min( TL(g[i]*g[j], p), TL(g[i]*g[j]^-1, p) ) le Abs( TL(g[i], p) - TL(g[j], p) ) and TL(g[i], p) le TL(g[j], p) then
+            return false, i;
+         elif Min( TL(g[i]*g[j], p), TL(g[i]*g[j]^-1, p) ) le Abs( TL(g[i], p) - TL(g[j], p) ) and TL(g[i], p) gt TL(g[j], p) then
+           return false, j;
+         end if;
+      end for;
+   end for;
+
+// we now check the axis of each g_k. First compute distance/length of overlap between each pair of axes
+   for k in [1..#g] do
+      for i,j in Exclude([1..#g],k) do
+         dij := ( Min( TL(g[i]*g[j], p), TL(g[i]*g[j]^-1, p) ) - TL(g[i], p) - TL(g[j], p) )/2;
+         dik := ( Min( TL(g[i]*g[k], p), TL(g[i]*g[k]^-1, p) ) - TL(g[i], p) - TL(g[k], p) )/2;
+         djk := ( Min( TL(g[j]*g[k], p), TL(g[j]*g[k]^-1, p) ) - TL(g[j], p) - TL(g[k], p) )/2;
+         dij1 := ( Min( TL(g[k]*g[i]*g[k]^-1*g[j], p), TL(g[k]*g[i]*g[k]^-1*g[j]^-1, p) ) - TL(g[i], p) - TL(g[j], p) )/2;
+         dij2 := ( Min( TL(g[i]*g[k]*g[j]*g[k]^-1, p), TL(g[i]*g[k]*g[j]^-1*g[k]^-1, p) ) - TL(g[i], p) - TL(g[j], p) )/2;
+// if axes of g_i and g_j intersect, and either g_kg_ig_k^-1 still intersects g_j
+// or g_kg_jg_k^-1 still intersects g_i, then Ping Pong fails for g_k (otherwise OK)
+         if dij le 0 and ( dij1 le 0 or dij2 le 0 ) then
+            return false, k;
+         end if;
+// if the axes of g_i and g_j do not intersect, then the length of the shortest path
+// containing projections of both axes onto axis of g_k is Max(0, dij - dik - djk)
+         if dij gt 0 and ( dij - dik - djk ) ge TL(g[k], p) then
+            return false, k;
+         end if;
+      end for;
+   end for;
+   return true, _;
+end function;
+
+
+// this function checks if there is j in {1,..,n} and
+// subsets s1, s2 of {1,..,n}\{j} such that replacing
+// each g_i (i in s1) by g_j*g_i and each g_i (i in s2)
+// by g_i*g_j^-1 reduces the quantity Sum
+
+// if there is such j, s1, s2, then the function returns
+// false and instructions on which product
+// replacements to perform. Otherwise returns true
+Check := function (g, p)
+   for j in [1..#g] do
+      N := { s : s in Exclude([1..#g],j) };
+      S := {@ s : s in Subsets(N) @};
+      for s1, s2 in S do
+         h := g;
+         for i in [1..#g] do
+            if i in s1 then
+               h[i] := h[j]*h[i];
+            end if;
+            if i in s2 then
+               h[i] := h[i]*h[j]^-1;
+            end if;
+         end for;
+         if Sum(h, p) lt Sum(g, p) then
+            return false, s1, s2, j;
+         end if;
+      end for;
+   end for;
+   return true, _, _, _;
+end function;
+
+
+// we now define the function to determine if G is both discrete and free
+
 IsDiscreteAndFree := function (G, p: Limit := 10^3)
-   assert Type (G) eq GrpMat; 
+   assert Type (G) eq GrpMat;
    g := [G.i: i in [1..Ngens (G)]];
 
-   // initialise generators of SLP group 
+   // initialise generators of SLP group
    S := SLPGroup (Ngens (G));
    s := [S.i: i in [1..Ngens (G)]];
 
-   // define translation length of matrix in SL(2, Q_p) on Bruhat-Tits tree
-   TL := function (m) 
-      return -2*Min (0, Valuation (pAdicField (p)!Trace (m)));
-   end function; 
-
-   // this is the quantity that reduces at each step of the algorithm:
-   // the sum of translation lengths of each generator g_i
-   // and all pairs of products g_i*g_j and g_i^-1*g_j
-   Sum := function(g)
-      sum := 0;
-      for i in [1..#g] do
-         sum +:= TL (g[i]);
-         for j in [i+1..#g] do
-            a := TL (g[i]*g[j]); b := TL (g[i]^-1*g[j]);
-            sum +:= a + b;
-         end for;
-      end for;
-      return sum;
-   end function;
-
-   // the following function checks whether or not an n-tuple g
-   // satisfies the Ping Pong Lemma. If it does, then it returns true
-   // and otherwise returns false and the index k of the element g_k which
-   // causes it to fail (i.e. translation length not large enough)
-
-   PPL := function(g)
-   // we first check that every pair satisfies Ping Pong
-      for i in [1..#g] do
-         for j in Exclude([1..#g],i) do
-            if Min( TL(g[i]*g[j]), TL(g[i]*g[j]^-1) ) le Abs( TL(g[i]) - TL(g[j]) ) and TL(g[i]) le TL(g[j]) then
-               return false, i;
-            elif Min( TL(g[i]*g[j]), TL(g[i]*g[j]^-1) ) le Abs( TL(g[i]) - TL(g[j]) ) and TL(g[i]) gt TL(g[j]) then
-              return false, j;
-            end if;
-         end for;
-      end for;
-
-   // we now check the axis of each g_k. First compute distance/length of overlap between each pair of axes
-      for k in [1..#g] do
-         for i,j in Exclude([1..#g],k) do
-            dij := ( Min( TL(g[i]*g[j]), TL(g[i]*g[j]^-1) ) - TL(g[i]) - TL(g[j]) )/2; 
-            dik := ( Min( TL(g[i]*g[k]), TL(g[i]*g[k]^-1) ) - TL(g[i]) - TL(g[k])  )/2; 
-            djk := ( Min( TL(g[j]*g[k]), TL(g[j]*g[k]^-1) ) - TL(g[j]) - TL(g[k]) )/2; 
-            dij1 := ( Min( TL(g[k]*g[i]*g[k]^-1*g[j]), TL(g[k]*g[i]*g[k]^-1*g[j]^-1) ) - TL(g[i]) - TL(g[j]) )/2;
-            dij2 := ( Min( TL(g[i]*g[k]*g[j]*g[k]^-1), TL(g[i]*g[k]*g[j]^-1*g[k]^-1) ) - TL(g[i]) - TL(g[j]) )/2;            
-   // if axes of g_i and g_j intersect, and either g_kg_ig_k^-1 still intersects g_j 
-   // or g_kg_jg_k^-1 still intersects g_i, then Ping Pong fails for g_k (otherwise OK)
-            if dij le 0 and ( dij1 le 0 or dij2 le 0 ) then 
-               return false, k;
-            end if;              
-   // if the axes of g_i and g_j do not intersect, then the length of the shortest path
-   // containing projections of both axes onto axis of g_k is Max(0, dij - dik - djk)
-            if dij gt 0 and ( dij - dik - djk ) ge TL(g[k]) then
-               return false, k;
-            end if;
-         end for;
-      end for;
-      return true, _;
-   end function;
-
-   // this function checks if there is j in {1,..,n} and
-   // subsets s1, s2 of {1,..,n}\{j} such that replacing
-   // each g_i (i in s1) by g_j*g_i and each g_i (i in s2)
-   // by g_i*g_j^-1 reduces the quantity Sum
-   
-   // if there is such j, s1, s2, then the function returns
-   // false and instructions on which product 
-   // replacements to perform. Otherwise returns true
-
-   Check := function (g)
-      for j in [1..#g] do 
-         N := { s : s in Exclude([1..#g],j) };
-         S := {@ s : s in Subsets(N) @}; 
-         for s1, s2 in S do
-            h := g;
-            for i in [1..#g] do
-               if i in s1 then
-                  h[i] := h[j]*h[i];
-               end if;
-               if i in s2 then
-                  h[i] := h[i]*h[j]^-1;
-               end if;
-            end for;
-            if Sum(h) lt Sum(g) then
-               return false, s1, s2, j;
-            end if;
-         end for;
-      end for;
-      return true, _, _, _;
-   end function; 
-
    // this is the start of the algorithm
-   // we first check if any generators 
+   // we first check if any generators
    // are elliptic and return false if so
 
    nmr := 0;
    repeat
       nmr +:= 1;
       for i in [1..#g] do
-         if TL (g[i]) eq 0 then 
+         if TL (g[i], p) eq 0 then
             return false, g[i], s[i];
          end if;
       end for;
@@ -120,8 +126,7 @@ IsDiscreteAndFree := function (G, p: Limit := 10^3)
       // here we check if the Check function passes or fails
       // if it fails, then one performs the relevant product replacements
 
-
-      flag, a, b, c := Check(g);
+      flag, a, b, c := Check(g, p);
 
       if not flag then
          for i in [1..#g] do
@@ -139,7 +144,7 @@ IsDiscreteAndFree := function (G, p: Limit := 10^3)
    if not flag then error "Failed"; end if;
    "Number of steps is ", nmr;
 
-   if PPL(g) then
+   if PPL(g, p) then
       return true, _, _;
    else
       return "inconclusive", g, s;
@@ -147,3 +152,21 @@ IsDiscreteAndFree := function (G, p: Limit := 10^3)
 
 end function;
 
+
+/////////////////////////
+
+// this function generates n "random" elements of SL(2,Q) (in SL(2,Qp))
+// and returns these as a list, along with the n-generated subgroup of SL(2,Q)
+RandomGroup := function(n, p, B)
+   Z := Integers(); gens := [];
+   for i in [1..n] do
+      repeat a := Random(Z,B) * p^Random(Z,B);
+      until a ne 0;
+      b := Random(Z,B) * p^Random(Z,B);
+      c := Random(Z,B) * p^Random(Z,B);
+      d := (1 + b * c) / a;
+      gens[i] := Matrix( 2, [a, b, c, d]);
+   end for;
+   G := sub<GL(2, Rationals()) | gens>;
+   return gens, G;
+end function;
