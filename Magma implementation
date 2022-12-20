@@ -152,21 +152,3 @@ IsDiscreteAndFree := function (G, p: Limit := 10^3)
 
 end function;
 
-
-/////////////////////////
-
-// this function generates n "random" elements of SL(2,Q) (in SL(2,Qp))
-// and returns these as a list, along with the n-generated subgroup of SL(2,Q)
-RandomGroup := function(n, p, B)
-   Z := Integers(); gens := [];
-   for i in [1..n] do
-      repeat a := Random(Z,B) * p^Random(Z,B);
-      until a ne 0;
-      b := Random(Z,B) * p^Random(Z,B);
-      c := Random(Z,B) * p^Random(Z,B);
-      d := (1 + b * c) / a;
-      gens[i] := Matrix( 2, [a, b, c, d]);
-   end for;
-   G := sub<GL(2, Rationals()) | gens>;
-   return gens, G;
-end function;
